@@ -1,0 +1,32 @@
+# ubuntu-bio
+
+> The official Python SDK and CLI (`ubio`) for the UbuntuBio African Bioinformatics Data Hub. Enables programmatic discovery, download, streaming, and publication of sovereign African pathogen and biodiversity genomic datasets with Git versioning and content-addressed deduplication.
+
+## Quickstart
+
+- [CLI Usage](LLMS.md#cli-reference): Complete reference for `ubio` terminal commands (`login`, `whoami`, `create`, `upload`, `search`, `download`).
+- [Python SDK API](LLMS.md#python-sdk-api-reference): Function signatures, parameter types, and return values for `import ubuntu_bio as ub`.
+- [Biological Constraints & Data Governance](LLMS.md#biological-data-rules--constraints): Invariants on permitted AU country codes, biological domains, and strict non-human data policies.
+- [Pipeline Recipes](LLMS.md#idiomatic-pipeline-recipes): Copy-pasteable code recipes for automated ingestion, Biopython analysis, and surveillance queries.
+
+## Core Interfaces
+
+- **Installation**: `pip install ubuntu-bio`
+- **CLI Commands**:
+  - `ubio login`: Authenticate with ORCID via browser loopback or RFC 8628 device flow.
+  - `ubio whoami`: Display authenticated researcher profile and verified personal namespace handle.
+  - `ubio create <repo-id> -d <domain> -a <access>`: Create dataset repository (auto-namespacing supported).
+  - `ubio upload <repo-id> <folder> -m "<message>"`: Commit and upload local genomic files.
+  - `ubio search "<query>" -c <AU-country> -d <domain>`: Search public datasets catalog.
+  - `ubio download <repo-id> -o <dir>`: Download dataset snapshot with local caching.
+  - `ubio download-remote <manifest.tsv> -o <dir>`: Download external files with MD5 verification.
+- **Python Library**:
+  - `ub.login()`, `ub.whoami()`
+  - `ub.create_repo()`, `ub.get_repo()`, `ub.list_repos()`, `ub.get_tree()`, `ub.get_commits()`
+  - `ub.upload_folder()`, `ub.upload_file()`
+  - `ub.download_file()`, `ub.snapshot_download()`, `ub.download_remote_files()`
+  - `ub.search()`
+
+## Full Reference Documentation
+
+For detailed signatures, parameters, exceptions, and code examples, see [LLMS.md](LLMS.md).
