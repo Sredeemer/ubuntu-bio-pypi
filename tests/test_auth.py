@@ -58,3 +58,63 @@ def test_login_and_logout(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> No
 
         assert logout() is True
         assert get_token(custom_path=test_token_path) is None
+
+
+def test_find_free_port() -> None:
+    """Test finding an available port on loopback."""
+    from ubuntu_bio.auth import find_free_port
+
+    port = find_free_port()
+    assert isinstance(port, int)
+    assert 1024 < port < 65536
+
+
+def test_loopback_callback_server_flow() -> None:
+    """Test LoopbackCallbackServer handles callback request and captures token."""
+    import httpx
+
+    from ubuntu_bio.auth import LoopbackCallbackServer, find_free_port
+
+    port = find_free_port()
+    server = LoopbackCallbackServer(port=port)
+    server.start()
+
+    try:
+        # Send HTTP GET callback
+        resp = httpx.get(f"http://127.0.0.1:{port}/callback?token=ubp_loopback_test_token")
+        assert resp.status_code == 200
+        assert "Terminal Authorized!" in resp.text
+        assert server.token == "ubp_loopback_test_token"
+    finally:
+        server.shutdown()
+
+
+def test_wait_for_auth_token_loopback_immediate() -> None:
+    """Test wait_for_auth_token returns token when loopback server has received it."""
+    from ubuntu_bio.auth import LoopbackCallbackServer, wait_for_auth_token
+
+    mock_server = LoopbackCallbackServer(port=12345)
+    mock_server.token = "ubp_instant_token"
+
+    token = wait_for_auth_token(loopback_server=mock_server, timeout=5)
+    assert token == "ubp_instant_token"
+
+
+def test_wait_for_auth_token_device_fallback() -> None:
+    """Test wait_for_auth_token falls back to device code polling."""
+    from unittest.mock import MagicMock, patch
+
+    from ubuntu_bio.auth import wait_for_auth_token
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"access_token": "ubp_device_fallback_token"}
+
+    with patch("httpx.post", return_value=mock_resp):
+        token = wait_for_auth_token(
+            loopback_server=None,
+            device_code="dev_code_123",
+            interval=0,
+            timeout=5,
+        )
+        assert token == "ubp_device_fallback_token"

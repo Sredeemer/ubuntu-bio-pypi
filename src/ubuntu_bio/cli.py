@@ -13,10 +13,21 @@ from rich.table import Table
 from rich.text import Text
 
 from ubuntu_bio import __version__
-from ubuntu_bio.auth import login as auth_login
-from ubuntu_bio.auth import logout as auth_logout
-from ubuntu_bio.auth import poll_device_token, request_device_code
-from ubuntu_bio.auth import whoami as auth_whoami
+from ubuntu_bio.auth import (
+    LoopbackCallbackServer,
+    find_free_port,
+    request_device_code,
+    wait_for_auth_token,
+)
+from ubuntu_bio.auth import (
+    login as auth_login,
+)
+from ubuntu_bio.auth import (
+    logout as auth_logout,
+)
+from ubuntu_bio.auth import (
+    whoami as auth_whoami,
+)
 from ubuntu_bio.download import download_file, download_remote_files, snapshot_download
 from ubuntu_bio.exceptions import UbuntuBioError
 from ubuntu_bio.hub import create_repo as hub_create_repo
@@ -82,6 +93,14 @@ def login(
             help="Manually enter token without opening browser.",
         ),
     ] = False,
+    device: Annotated[
+        bool,
+        typer.Option(
+            "--device",
+            "-d",
+            help="Use standard RFC 8628 device code flow directly.",
+        ),
+    ] = False,
 ) -> None:
     """Log in to UbuntuBio Hub via browser (ORCID) or Personal Access Token."""
     # 1. Manual / explicit token provided
@@ -92,14 +111,29 @@ def login(
             "Enter your UbuntuBio Personal Access Token", hide_input=True
         ).strip()
     else:
-        # 2. Interactive Browser-based Device Authorization (RFC 8628)
+        # 2. Interactive Browser-based Dual-Mode Authentication
+        loopback_server: LoopbackCallbackServer | None = None
         try:
+            # Step A: Request Device Authorization Code from Hub
             code_data = request_device_code()
             user_code = code_data["user_code"]
             device_code = code_data["device_code"]
             verification_url = code_data["verification_uri_complete"]
-            interval = code_data.get("interval", 2)
-            expires_in = code_data.get("expires_in", 600)
+            interval = code_data.get("interval", 1)
+            expires_in = code_data.get("expires_in", 300)
+
+            # Step B: Try starting ephemeral local loopback server for instant handshake
+            if not device:
+                try:
+                    port = find_free_port()
+                    server = LoopbackCallbackServer(port=port)
+                    server.start()
+                    loopback_server = server
+                    delim = "&" if "?" in verification_url else "?"
+                    verification_url = f"{verification_url}{delim}port={port}"
+                except Exception:
+                    # In restricted/container environments, gracefully fall back to device code
+                    loopback_server = None
 
             # Build visual panel
             panel_text = render_ascii_banner()
@@ -116,10 +150,17 @@ def login(
             panel_text.append("  [2] One-Time Code:        ", style="bold white")
             panel_text.append(f"  {user_code}  \n", style="bold black on #00ed64")
 
+            mode_note = (
+                "Instant loopback active" if loopback_server else "RFC 8628 Device Authorization"
+            )
+            subtitle_str = (
+                f"[dim]Opening browser automatically • {mode_note} • "
+                "Press Ctrl+C for manual token[/dim]"
+            )
             panel = Panel(
                 panel_text,
                 title="[bold #00ed64]UbuntuBio Terminal Authentication[/bold #00ed64]",
-                subtitle="[dim]Opening browser automatically • Press Ctrl+C for manual token[/dim]",
+                subtitle=subtitle_str,
                 box=box.ROUNDED,
                 border_style="#00ed64",
             )
@@ -135,17 +176,19 @@ def login(
 
             # Polling with animated rich spinner
             spinner_msg = (
-                "[bold #00d2ff]Waiting for browser approval in portal "
-                f"({user_code})...[/bold #00d2ff]"
+                f"[bold #00d2ff]Waiting for browser authorization ({user_code})...[/bold #00d2ff]"
             )
             with console.status(spinner_msg, spinner="dots"):
-                clean_token = poll_device_token(
+                clean_token = wait_for_auth_token(
+                    loopback_server=loopback_server,
                     device_code=device_code,
                     interval=interval,
                     timeout=expires_in,
                 )
 
         except KeyboardInterrupt:
+            if loopback_server:
+                loopback_server.shutdown()
             console.print("\n[yellow]Device authorization cancelled.[/yellow]")
             fallback = typer.confirm("Would you like to enter a token manually?", default=True)
             if fallback:
@@ -155,6 +198,8 @@ def login(
             else:
                 raise typer.Exit(code=1) from None
         except UbuntuBioError as exc:
+            if loopback_server:
+                loopback_server.shutdown()
             console.print(f"[bold red]Login failed:[/bold red] {exc}")
             raise typer.Exit(code=1) from exc
 

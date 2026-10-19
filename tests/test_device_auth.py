@@ -66,7 +66,7 @@ def test_poll_device_token_expired() -> None:
             poll_device_token("dev_123", interval=0, timeout=10)
 
 
-def test_cli_login_with_token_flag(tmp_path) -> None:
+def test_cli_login_with_token_flag() -> None:
     """Test ubio login --token preserves legacy instant login without opening browser."""
     mock_whoami = {
         "id": "uuid-1",
