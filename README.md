@@ -144,15 +144,11 @@ fasta_path = ub.download_file("pasteur-dakar/cholera-2024", "assemblies/sample_0
 dataset_dir = ub.snapshot_download("pasteur-dakar/cholera-2024", revision="main")
 ```
 
----
+## Contributing
 
-## Configuration & Environment Variables
+Contributions (feature requests, bugs, etc.) are super welcome 💙💚💛💜🧡❤️
 
-| Variable | Description | Default |
-| :--- | :--- | :--- |
-| `UBUNTUBIO_SERVER_URL` | UbuntuBio Hub API server URL | `https://hub.ubuntubio.org` |
-| `UBUNTUBIO_API_TOKEN` | Personal Access Token (`ubp_...`) for non-interactive environments / CI | `None` |
-| `UBUNTUBIO_CONFIG_DIR` | Directory storing local credentials cache | `~/.config/ubuntubio` |
+Everyone is welcome to contribute, and we value everybody's contribution. Code is not the only way to help the community. Answering questions, helping others, reaching out and improving the documentations are immensely valuable to the community. We wrote a [contribution guide](CONTRIBUTING.md) to summarize how to get started to contribute to this repository.
 
 ---
 
