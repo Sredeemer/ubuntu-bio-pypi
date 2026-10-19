@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from rich import box
@@ -668,7 +668,10 @@ def search(
       [green]$[/green] ubio search "cassava" --domain plant
     """
     try:
-        results = hub_search(query=query, domain=domain)
+        raw_results = hub_search(query=query, domain=domain)
+        results: list[dict[str, Any]] = (
+            raw_results.get("hits", []) if isinstance(raw_results, dict) else raw_results
+        )
         if not results:
             console.print(f"[yellow]No datasets found matching '{query}'.[/yellow]")
             return

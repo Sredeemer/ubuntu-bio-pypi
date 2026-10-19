@@ -37,8 +37,12 @@ def search(
             timeout=15.0,
         )
         if resp.status_code == 200:
-            res: list[dict[str, Any]] = resp.json()
-            return res
+            data = resp.json()
+            if isinstance(data, dict) and "hits" in data:
+                hits_list: list[dict[str, Any]] = data["hits"]
+                return hits_list
+            if isinstance(data, list):
+                return data
     except httpx.RequestError:
         pass
 
