@@ -28,6 +28,7 @@ from ubuntu_bio.auth import (
 from ubuntu_bio.auth import (
     whoami as auth_whoami,
 )
+from ubuntu_bio.config import get_hub_url
 from ubuntu_bio.download import download_file, download_remote_files, snapshot_download
 from ubuntu_bio.exceptions import UbuntuBioError
 from ubuntu_bio.hub import create_repo as hub_create_repo
@@ -114,7 +115,8 @@ def login(
         # 2. Interactive Browser-based Dual-Mode Authentication
         loopback_server: LoopbackCallbackServer | None = None
         try:
-            # Step A: Request Device Authorization Code from Hub
+            hub_base = get_hub_url().rstrip("/")
+            # Step A: Request Device Authorization Code from Hub (for fallback)
             code_data = request_device_code()
             user_code = code_data["user_code"]
             device_code = code_data["device_code"]
@@ -129,11 +131,13 @@ def login(
                     server = LoopbackCallbackServer(port=port)
                     server.start()
                     loopback_server = server
-                    delim = "&" if "?" in verification_url else "?"
-                    verification_url = f"{verification_url}{delim}port={port}"
+                    browser_url = f"{hub_base}/api/auth/orcid/authorize?state=cli_port_{port}"
                 except Exception:
                     # In restricted/container environments, gracefully fall back to device code
                     loopback_server = None
+                    browser_url = verification_url
+            else:
+                browser_url = verification_url
 
             # Build visual panel
             panel_text = render_ascii_banner()
@@ -145,8 +149,8 @@ def login(
                 "  Genomic Intelligence & Pathogen Surveillance across 54 AU Member States\n\n",
                 style="dim #9ca3af",
             )
-            panel_text.append("  [1] Authorize in Browser: ", style="bold white")
-            panel_text.append(f"{verification_url}\n", style="bold #00d2ff underline")
+            panel_text.append("  [1] Authorize in Browser:\n", style="bold white")
+            panel_text.append(f"      {browser_url}\n\n", style="bold #00d2ff underline")
             panel_text.append("  [2] One-Time Code:        ", style="bold white")
             panel_text.append(f"  {user_code}  \n", style="bold black on #00ed64")
 
@@ -170,7 +174,7 @@ def login(
             try:
                 import webbrowser
 
-                webbrowser.open(verification_url)
+                webbrowser.open(browser_url)
             except OSError:
                 pass
 

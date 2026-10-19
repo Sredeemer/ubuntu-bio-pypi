@@ -333,7 +333,10 @@ def wait_for_auth_token(
                 except httpx.RequestError:
                     pass  # transient network issue, keep checking
 
-            time.sleep(interval)
+            if loopback_server and loopback_server._event:
+                loopback_server._event.wait(timeout=interval)
+            else:
+                time.sleep(interval)
     finally:
         if loopback_server:
             loopback_server.shutdown()
