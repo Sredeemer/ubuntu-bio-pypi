@@ -6,7 +6,7 @@ publishing, and versioning genomic datasets.
 
 from __future__ import annotations
 
-from ubuntu_bio.auth import login, logout, whoami
+from ubuntu_bio.auth import login, logout, poll_device_token, request_device_code, whoami
 from ubuntu_bio.config import get_cache_dir, get_config_dir, get_hub_url
 from ubuntu_bio.download import download_file, download_remote_files, snapshot_download
 from ubuntu_bio.exceptions import (
@@ -46,6 +46,8 @@ __all__ = [
     "list_repos",
     "login",
     "logout",
+    "poll_device_token",
+    "request_device_code",
     "search",
     "snapshot_download",
     "upload_file",

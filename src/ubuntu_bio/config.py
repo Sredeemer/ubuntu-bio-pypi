@@ -5,9 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-DEFAULT_HUB_URL = os.environ.get(
-    "UBUNTUBIO_HUB_URL", "https://ubuntu-bio-web.vercel.app"
-)
+DEFAULT_HUB_URL = os.environ.get("UBUNTUBIO_HUB_URL", "https://ubuntu-bio-web.vercel.app")
 DEFAULT_CONFIG_DIR = Path(
     os.environ.get("UBUNTUBIO_CONFIG_DIR", Path.home() / ".config" / "ubuntubio")
 )

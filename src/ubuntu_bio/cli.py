@@ -6,12 +6,16 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from rich import box
 from rich.console import Console
+from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
 
 from ubuntu_bio import __version__
 from ubuntu_bio.auth import login as auth_login
 from ubuntu_bio.auth import logout as auth_logout
+from ubuntu_bio.auth import poll_device_token, request_device_code
 from ubuntu_bio.auth import whoami as auth_whoami
 from ubuntu_bio.download import download_file, download_remote_files, snapshot_download
 from ubuntu_bio.exceptions import UbuntuBioError
@@ -25,6 +29,23 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
+
+
+def render_ascii_banner() -> Text:
+    """Generate two-tone ASCII art banner for UbuntuBio."""
+    lines = [
+        ("   __  ____                  __         ", "____  _       "),
+        ("  / / / / /_  __  ______  __/ /___  __ ", "/ __ )(_)___   "),
+        (" / / / / __ \\/ / / / __ \\/ __/ / / / /", "/ __  / / __ \\  "),
+        ("/ /_/ / /_/ / /_/ / / / / /_/ /_/ / /", "/ /_/ / / /_/ /  "),
+        (r"\____/_.___/\__,_/_/ /_/\__/\__,_/_/", r"/_____/_/\____/   "),
+    ]
+    t = Text()
+    for left, right in lines:
+        t.append(left, style="bold #00ed64")
+        t.append(right, style="bold #00d2ff")
+        t.append("\n")
+    return t
 
 
 def version_callback(value: bool) -> None:
@@ -50,19 +71,118 @@ def login(
         typer.Option(
             "--token",
             "-t",
-            help="Personal Access Token (ubp_...). If omitted, you will be prompted securely.",
+            help="Personal Access Token (ubp_...).",
         ),
     ] = None,
+    manual: Annotated[
+        bool,
+        typer.Option(
+            "--manual",
+            "-m",
+            help="Manually enter token without opening browser.",
+        ),
+    ] = False,
 ) -> None:
-    """Log in to UbuntuBio Hub using your Personal Access Token."""
-    if not token:
-        token = typer.prompt("Enter your UbuntuBio Personal Access Token", hide_input=True)
+    """Log in to UbuntuBio Hub via browser (ORCID) or Personal Access Token."""
+    # 1. Manual / explicit token provided
+    if token:
+        clean_token = token.strip()
+    elif manual:
+        clean_token = typer.prompt(
+            "Enter your UbuntuBio Personal Access Token", hide_input=True
+        ).strip()
+    else:
+        # 2. Interactive Browser-based Device Authorization (RFC 8628)
+        try:
+            code_data = request_device_code()
+            user_code = code_data["user_code"]
+            device_code = code_data["device_code"]
+            verification_url = code_data["verification_uri_complete"]
+            interval = code_data.get("interval", 2)
+            expires_in = code_data.get("expires_in", 600)
 
+            # Build visual panel
+            panel_text = render_ascii_banner()
+            panel_text.append(
+                "\n  🌍 African Sovereign Bioinformatics Data Hub\n",
+                style="bold white",
+            )
+            panel_text.append(
+                "  Genomic Intelligence & Pathogen Surveillance across 54 AU Member States\n\n",
+                style="dim #9ca3af",
+            )
+            panel_text.append("  [1] Authorize in Browser: ", style="bold white")
+            panel_text.append(f"{verification_url}\n", style="bold #00d2ff underline")
+            panel_text.append("  [2] One-Time Code:        ", style="bold white")
+            panel_text.append(f"  {user_code}  \n", style="bold black on #00ed64")
+
+            panel = Panel(
+                panel_text,
+                title="[bold #00ed64]UbuntuBio Terminal Authentication[/bold #00ed64]",
+                subtitle="[dim]Opening browser automatically • Press Ctrl+C for manual token[/dim]",
+                box=box.ROUNDED,
+                border_style="#00ed64",
+            )
+            console.print(panel)
+
+            # Attempt to automatically launch the default browser
+            try:
+                import webbrowser
+
+                webbrowser.open(verification_url)
+            except OSError:
+                pass
+
+            # Polling with animated rich spinner
+            spinner_msg = (
+                "[bold #00d2ff]Waiting for browser approval in portal "
+                f"({user_code})...[/bold #00d2ff]"
+            )
+            with console.status(spinner_msg, spinner="dots"):
+                clean_token = poll_device_token(
+                    device_code=device_code,
+                    interval=interval,
+                    timeout=expires_in,
+                )
+
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Device authorization cancelled.[/yellow]")
+            fallback = typer.confirm("Would you like to enter a token manually?", default=True)
+            if fallback:
+                clean_token = typer.prompt(
+                    "Enter your UbuntuBio Personal Access Token", hide_input=True
+                ).strip()
+            else:
+                raise typer.Exit(code=1) from None
+        except UbuntuBioError as exc:
+            console.print(f"[bold red]Login failed:[/bold red] {exc}")
+            raise typer.Exit(code=1) from exc
+
+    # Persist and verify session
     try:
-        profile = auth_login(token=token.strip())
-        console.print("[bold green]✓ Successfully authenticated![/bold green]")
-        console.print(f"Researcher: [bold]{profile.get('name')}[/bold]")
-        console.print(f"ORCID ID:   [cyan]{profile.get('orcid_id')}[/cyan]")
+        profile = auth_login(token=clean_token)
+        orcid_id = profile.get("orcid_id", "Unknown")
+        researcher_name = profile.get("name", "Researcher")
+
+        success_text = Text()
+        success_text.append(f"  ✓ Welcome back, {researcher_name}!\n\n", style="bold #00ed64")
+        success_text.append("  ORCID iD:    ", style="bold #9ca3af")
+        success_text.append(f"{orcid_id} (https://orcid.org/{orcid_id})\n", style="bold #00d2ff")
+        success_text.append("  Session:     ", style="bold #9ca3af")
+        success_text.append("CLI Terminal Session\n", style="bold white")
+        success_text.append("  Token Path:  ", style="bold #9ca3af")
+        success_text.append("~/.config/ubuntubio/token\n", style="dim")
+        success_text.append("  Status:      ", style="bold #9ca3af")
+        success_text.append("● Sovereign Verified (54 AU States)\n", style="bold #00ed64")
+
+        success_panel = Panel(
+            success_text,
+            title="[bold #00ed64]Authenticated Successfully[/bold #00ed64]",
+            box=box.ROUNDED,
+            border_style="#00ed64",
+        )
+        console.print(success_panel)
+
     except UbuntuBioError as exc:
         console.print(f"[bold red]Login failed:[/bold red] {exc}")
         raise typer.Exit(code=1) from exc
@@ -73,12 +193,25 @@ def whoami() -> None:
     """Display information about the currently authenticated user."""
     try:
         profile = auth_whoami()
-        table = Table(title="UbuntuBio Authenticated Session", show_header=False)
-        table.add_row("Name", profile.get("name", "Unknown"))
-        table.add_row("ORCID iD", profile.get("orcid_id", "Unknown"))
-        table.add_row("User ID", profile.get("id", "Unknown"))
+        table = Table(
+            title="[bold #00ed64]UbuntuBio Authenticated Session[/bold #00ed64]",
+            box=box.ROUNDED,
+            header_style="bold #00d2ff",
+            border_style="#1f2937",
+        )
+        table.add_column("Field", style="bold #9ca3af", width=16)
+        table.add_column("Value")
+
+        table.add_row("Researcher", f"[bold white]{profile.get('name', 'Unknown')}[/bold white]")
+        orcid = profile.get("orcid_id", "Unknown")
+        table.add_row("ORCID iD", f"[bold #00d2ff]{orcid}[/bold #00d2ff]")
+        table.add_row("User ID", f"[dim]{profile.get('id', 'Unknown')}[/dim]")
         if profile.get("email"):
             table.add_row("Email", profile.get("email"))
+        table.add_row(
+            "Compliance",
+            "[bold #00ed64]● Sovereign African Genomics (Non-human only)[/bold #00ed64]",
+        )
         console.print(table)
     except UbuntuBioError as exc:
         console.print(f"[bold yellow]Not authenticated:[/bold yellow] {exc}")
