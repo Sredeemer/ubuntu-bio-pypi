@@ -20,8 +20,11 @@ from ubuntu_bio.exceptions import (
     UploadError,
 )
 from ubuntu_bio.hub import create_repo, get_commits, get_repo, get_tree, list_repos
+from ubuntu_bio.scaffold import init_dataset
 from ubuntu_bio.search import search
+from ubuntu_bio.sniffer import SequenceSniffResult, sniff_sequence_file
 from ubuntu_bio.upload import upload_file, upload_folder
+from ubuntu_bio.validator import ValidationIssue, ValidationResult, validate_local_dataset
 
 __version__ = "0.1.0"
 
@@ -32,8 +35,11 @@ __all__ = [
     "DownloadError",
     "RepositoryAlreadyExistsError",
     "RepositoryNotFoundError",
+    "SequenceSniffResult",
     "UbuntuBioError",
     "UploadError",
+    "ValidationIssue",
+    "ValidationResult",
     "create_repo",
     "download_file",
     "download_remote_files",
@@ -43,6 +49,7 @@ __all__ = [
     "get_hub_url",
     "get_repo",
     "get_tree",
+    "init_dataset",
     "list_repos",
     "login",
     "logout",
@@ -50,7 +57,9 @@ __all__ = [
     "request_device_code",
     "search",
     "snapshot_download",
+    "sniff_sequence_file",
     "upload_file",
     "upload_folder",
+    "validate_local_dataset",
     "whoami",
 ]

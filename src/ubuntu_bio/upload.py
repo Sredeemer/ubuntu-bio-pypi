@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-import yaml
 
 from ubuntu_bio.config import get_hub_url, get_token
 from ubuntu_bio.exceptions import (
@@ -39,62 +38,36 @@ def _calculate_sha256(data: bytes) -> str:
 
 def _validate_local_metadata(folder_path: Path) -> None:
     """Perform preflight checks on README.md and samples.tsv before uploading."""
-    readme_path = folder_path / "README.md"
-    if readme_path.exists():
-        text = readme_path.read_text(encoding="utf-8")
-        lines = text.splitlines()
-        if not lines or lines[0].strip() != "---":
-            raise ClientValidationError(
-                "Local README.md must begin with '---' YAML front-matter boundary."
-            )
-        # Parse YAML frontmatter
-        end_idx = -1
-        for i in range(1, len(lines)):
-            if lines[i].strip() == "---":
-                end_idx = i
-                break
-        if end_idx == -1:
-            raise ClientValidationError(
-                "Local README.md has unterminated YAML front-matter; missing closing '---'."
-            )
-        try:
-            frontmatter = yaml.safe_load("\n".join(lines[1:end_idx]))
-            if not isinstance(frontmatter, dict):
-                raise ClientValidationError(
-                    "YAML front-matter in README.md must be a key-value mapping."
-                )
-            # Enforce non-human rule
-            taxa = frontmatter.get("taxa") or []
-            taxon_ids = frontmatter.get("taxon_ids") or []
-            all_taxa = list(taxon_ids)
-            for t in taxa:
-                if isinstance(t, dict) and "ncbi_taxon_id" in t:
-                    all_taxa.append(t["ncbi_taxon_id"])
-            if 9606 in all_taxa:
-                raise ClientValidationError(
-                    "Upload rejected: Human genomic data (Taxon ID 9606) is prohibited in v1."
-                )
-        except yaml.YAMLError as exc:
-            raise ClientValidationError(f"Invalid YAML syntax in README.md: {exc}") from exc
+    from ubuntu_bio.validator import validate_local_dataset
 
+    readme_path = folder_path / "README.md"
     samples_path = folder_path / "samples.tsv"
-    if samples_path.exists():
-        samples_text = samples_path.read_text(encoding="utf-8")
-        s_lines = [ln.strip() for ln in samples_text.splitlines() if ln.strip()]
-        if not s_lines:
-            raise ClientValidationError("Local samples.tsv is empty.")
-        header = s_lines[0].split("\t")
-        if "sample_id" not in header:
-            raise ClientValidationError("samples.tsv is missing mandatory 'sample_id' column.")
-        # Check taxon_id column if present
-        if "taxon_id" in header:
-            t_idx = header.index("taxon_id")
-            for r_idx, row in enumerate(s_lines[1:], start=2):
-                cols = row.split("\t")
-                if len(cols) > t_idx and cols[t_idx].strip() == "9606":
-                    raise ClientValidationError(
-                        f"samples.tsv row {r_idx}: Human data (Taxon ID 9606) is prohibited in v1."
-                    )
+
+    if not readme_path.exists() and not samples_path.exists():
+        return
+
+    result = validate_local_dataset(folder_path)
+    if not result.is_valid:
+        # Prioritize human taxon violations for clear error reporting
+        for err in result.errors:
+            if "Human" in err.message or "9606" in err.message:
+                raise ClientValidationError(err.message)
+
+        # If only one metadata file was provided, ignore missing the other during subfolder uploads
+        relevant_errors = [
+            err
+            for err in result.errors
+            if not (
+                not readme_path.exists() and "Missing mandatory file 'README.md'" in err.message
+            )
+            and not (
+                not samples_path.exists() and "Missing mandatory file 'samples.tsv'" in err.message
+            )
+        ]
+        if relevant_errors:
+            raise ClientValidationError(
+                f"Preflight validation failed: {relevant_errors[0].message}"
+            )
 
 
 def upload_file(

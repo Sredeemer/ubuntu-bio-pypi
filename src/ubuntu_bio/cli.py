@@ -30,10 +30,12 @@ from ubuntu_bio.auth import (
 )
 from ubuntu_bio.config import get_hub_url
 from ubuntu_bio.download import download_file, download_remote_files, snapshot_download
-from ubuntu_bio.exceptions import UbuntuBioError
+from ubuntu_bio.exceptions import ClientValidationError, UbuntuBioError
 from ubuntu_bio.hub import create_repo as hub_create_repo
+from ubuntu_bio.scaffold import init_dataset
 from ubuntu_bio.search import search as hub_search
 from ubuntu_bio.upload import upload_file, upload_folder
+from ubuntu_bio.validator import validate_local_dataset
 
 app = typer.Typer(
     name="ubio",
@@ -41,28 +43,28 @@ app = typer.Typer(
 
 [bold white]Workflow & Common Subcommands:[/bold white]
   • [bold #00d2ff]ubio login[/bold #00d2ff]      ORCID browser authentication or token setup.
-  • [bold #00d2ff]ubio whoami[/bold #00d2ff]    Inspect verified identity, @username, and AU status.
+  • [bold #00d2ff]ubio whoami[/bold #00d2ff]     Inspect verified identity, handle, and AU status.
+  • [bold #00d2ff]ubio init[/bold #00d2ff]       Scaffold a MIxS-compliant dataset directory.
+  • [bold #00d2ff]ubio check[/bold #00d2ff]      Validate local metadata and verify file parity.
   • [bold #00d2ff]ubio create[/bold #00d2ff]     Create dataset (defaults to personal namespace).
   • [bold #00d2ff]ubio upload[/bold #00d2ff]     Upload files/directories with Git versioning.
   • [bold #00d2ff]ubio download[/bold #00d2ff]   Download specific files or full snapshots.
-  • [bold #00d2ff]ubio search[/bold #00d2ff]     Search African pathogens and biodiversity genomics.
+  • [bold #00d2ff]ubio search[/bold #00d2ff]     Search African pathogen & biodiversity genomics.
   • [bold #00d2ff]ubio download-remote[/bold #00d2ff] Fetch external mirrors from remote_files.tsv.
 
 [bold white]Quick Examples:[/bold white]
-  [dim]# 1. Authenticate with ORCID[/dim]
+  [dim]# 1. Scaffold a new pathogen dataset directory[/dim]
+  [green]$[/green] ubio init ./lassa-surveillance-2024
+
+  [dim]# 2. Pre-flight check local dataset before uploading[/dim]
+  [green]$[/green] ubio check ./lassa-surveillance-2024
+
+  [dim]# 3. Authenticate with ORCID[/dim]
   [green]$[/green] ubio login
 
-  [dim]# 2. Create a personal dataset (auto-namespaced to @your_username)[/dim]
+  [dim]# 4. Create and upload dataset[/dim]
   [green]$[/green] ubio create lassa-surveillance-2024 --domain virus
-
-  [dim]# 3. Create an organization dataset with gated access[/dim]
-  [green]$[/green] ubio create ncdc/cholera-outbreak-ng --domain bacteria --access gated
-
-  [dim]# 4. Upload genomic sequences[/dim]
-  [green]$[/green] ubio upload lassa-surveillance-2024 ./samples.fasta
-
-  [dim]# 5. Search the sovereign registry[/dim]
-  [green]$[/green] ubio search "marburg" --domain virus
+  [green]$[/green] ubio upload lassa-surveillance-2024 ./lassa-surveillance-2024
 """,
     rich_markup_mode="rich",
     no_args_is_help=True,
@@ -693,6 +695,271 @@ def search(
     except UbuntuBioError as exc:
         console.print(f"[bold red]Search failed:[/bold red] {exc}")
         raise typer.Exit(code=1) from exc
+
+
+@app.command(name="init")
+def init(
+    path: Annotated[
+        Path,
+        typer.Argument(
+            help="Directory to initialize dataset in.",
+            file_okay=False,
+            dir_okay=True,
+        ),
+    ] = Path("."),
+    non_interactive: Annotated[
+        bool,
+        typer.Option(
+            "--non-interactive",
+            "-y",
+            help="Run in non-interactive mode using arguments or defaults without prompting.",
+        ),
+    ] = False,
+    title: Annotated[
+        str | None,
+        typer.Option("--title", "-t", help="Dataset title."),
+    ] = None,
+    domain: Annotated[
+        str | None,
+        typer.Option(
+            "--domain",
+            "-d",
+            help="Scientific domain: bacteria, virus, parasite, plant, veterinary, metagenome.",
+        ),
+    ] = None,
+    country: Annotated[
+        str | None,
+        typer.Option(
+            "--country",
+            "-c",
+            help="AU member state ISO-3166-1 alpha-2 country code (e.g. GH, NG, KE).",
+        ),
+    ] = None,
+    taxon_id: Annotated[
+        int | None,
+        typer.Option("--taxon-id", help="NCBI Taxonomy ID (human 9606 is prohibited)."),
+    ] = None,
+    platform: Annotated[
+        str | None,
+        typer.Option(
+            "--platform",
+            help="Sequencing platform (e.g. ILLUMINA, OXFORD_NANOPORE, PACBIO).",
+        ),
+    ] = None,
+    layout: Annotated[
+        str | None,
+        typer.Option("--layout", help="Library layout: paired or single."),
+    ] = None,
+    strategy: Annotated[
+        str | None,
+        typer.Option(
+            "--strategy",
+            help="Sequencing strategy: WGS, AMPLICON, RNA-Seq, TARGETED-CAPTURE, etc.",
+        ),
+    ] = None,
+    access: Annotated[
+        str | None,
+        typer.Option("--access", help="Access tier: public, gated, or private."),
+    ] = None,
+) -> None:
+    """Scaffold a new UbuntuBio dataset directory with templates and directory layout.
+
+    Generates MIxS-compliant README.md with sequencing experiment frontmatter,
+    samples.tsv template, remote_files.tsv, and reads/ directory.
+
+    [bold white]Examples:[/bold white]
+      [dim]# Interactive wizard:[/dim]
+      [green]$[/green] ubio init ./lassa-surveillance
+
+      [dim]# Non-interactive batch scaffold:[/dim]
+      [green]$[/green] ubio init ./mpox-data -y -t "Mpox" -d virus -c NG --taxon-id 10244
+    """
+    if not non_interactive:
+        console.print(
+            Panel.fit(
+                "[bold cyan]UbuntuBio Dataset Initialization Wizard[/bold cyan]\n"
+                "Configure MIxS-compliant metadata and sequencing manifest.",
+                border_style="cyan",
+            )
+        )
+        if not title:
+            title = typer.prompt("Dataset Title", default="African Pathogen Surveillance Study")
+        if not domain:
+            domain = typer.prompt(
+                "Domain (bacteria, virus, parasite, plant, veterinary, metagenome)",
+                default="virus",
+            )
+        if not country:
+            country = typer.prompt(
+                "AU Country Code (e.g. GH, NG, KE, ZA, EG)",
+                default="GH",
+            )
+        if taxon_id is None:
+            taxon_id_raw = typer.prompt("NCBI Taxonomy ID (9606 prohibited)", default="10566")
+            try:
+                taxon_id = int(taxon_id_raw)
+            except ValueError as err:
+                console.print("[bold red][ERROR] Taxonomy ID must be an integer.[/bold red]")
+                raise typer.Exit(code=1) from err
+        if not platform:
+            platform = typer.prompt(
+                "Sequencing Platform (ILLUMINA, OXFORD_NANOPORE, PACBIO, etc.)",
+                default="ILLUMINA",
+            )
+        if not layout:
+            layout = typer.prompt("Library Layout (paired, single)", default="paired")
+        if not strategy:
+            strategy = typer.prompt(
+                "Library Strategy (WGS, AMPLICON, RNA-Seq, TARGETED-CAPTURE, etc.)",
+                default="WGS",
+            )
+        if not access:
+            access = typer.prompt("Access Tier (public, gated, private)", default="public")
+    else:
+        title = title or "African Pathogen Surveillance Study"
+        domain = domain or "virus"
+        country = country or "GH"
+        taxon_id = taxon_id if taxon_id is not None else 10566
+        platform = platform or "ILLUMINA"
+        layout = layout or "paired"
+        strategy = strategy or "WGS"
+        access = access or "public"
+
+    try:
+        init_dataset(
+            target_dir=path,
+            title=title,
+            domain=domain,
+            country=country,
+            taxon_id=taxon_id,
+            access=access,
+            platform=platform,
+            library_strategy=strategy,
+            library_layout=layout,
+        )
+        console.print(
+            Panel.fit(
+                f"[bold green][SUCCESS] Dataset scaffolded successfully at:[/bold green]\n"
+                f"[cyan]{path.resolve()}[/cyan]\n\n"
+                f"[bold white]Created Files:[/bold white]\n"
+                f"  - [cyan]README.md[/cyan] (MIxS dataset card and sequencing manifest)\n"
+                f"  - [cyan]samples.tsv[/cyan] (Sample metadata template)\n"
+                f"  - [cyan]remote_files.tsv[/cyan] (External sequence file manifest)\n"
+                f"  - [cyan]reads/[/cyan] (Local sequence data directory)\n\n"
+                f"[bold white]Next Steps:[/bold white]\n"
+                f"  1. Edit [cyan]{path}/README.md[/cyan] and fill in your library file names.\n"
+                f"  2. Place FASTQ/BAM files in [cyan]{path}/reads/[/cyan] or record URLs "
+                f"in [cyan]{path}/remote_files.tsv[/cyan].\n"
+                f"  3. Run [bold #00d2ff]ubio check {path}[/bold #00d2ff] to verify compliance.",
+                title="[bold green]UbuntuBio Dataset Initialized[/bold green]",
+                border_style="green",
+            )
+        )
+    except ClientValidationError as exc:
+        console.print(f"[bold red][ERROR] Validation failed:[/bold red] {exc}")
+        raise typer.Exit(code=1) from exc
+    except Exception as exc:
+        console.print(f"[bold red][ERROR] Failed to scaffold dataset:[/bold red] {exc}")
+        raise typer.Exit(code=1) from exc
+
+
+@app.command(name="check")
+def check(
+    path: Annotated[
+        Path,
+        typer.Argument(
+            help="Directory containing the dataset to validate.",
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+        ),
+    ] = Path("."),
+    strict: Annotated[
+        bool,
+        typer.Option(
+            "--strict",
+            help="Treat warnings as errors.",
+        ),
+    ] = False,
+) -> None:
+    """Validate local dataset metadata, MIxS compliance, and sequence file parity.
+
+    Verifies:
+      - README.md frontmatter syntax and mandatory MIxS fields
+      - samples.tsv column headers and row validations (ISO date, AU country, Taxon ID)
+      - Prohibited human taxon ID 9606 checks
+      - Sequencing experiment block and library declaration
+      - Two-way file parity (detects missing declared files and orphaned sequence files)
+    """
+    console.print(f"[bold cyan][INFO] Inspecting dataset at:[/bold cyan] {path.resolve()}")
+    try:
+        result = validate_local_dataset(path)
+    except Exception as exc:
+        console.print(f"[bold red][ERROR] Unexpected error during validation:[/bold red] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    table = Table(title="Dataset Validation Diagnostics", box=box.ROUNDED)
+    table.add_column("Level", style="bold", width=10)
+    table.add_column("Rule / Field", style="cyan", width=25)
+    table.add_column("Message", style="white")
+
+    has_errors = not result.valid or result.has_errors
+    has_warnings = result.has_warnings
+
+    for issue in result.issues:
+        level_style = "bold red" if issue.level == "error" else "bold yellow"
+        level_tag = f"[{level_style}][{issue.level.upper()}][/{level_style}]"
+        field_name = issue.field or "-"
+        table.add_row(level_tag, field_name, issue.message)
+
+    if result.issues:
+        console.print(table)
+    else:
+        console.print("[bold green][INFO] No issues or warnings found.[/bold green]")
+
+    if result.sniff_results:
+        seq_table = Table(title="Sequence File Screening Diagnostics", box=box.ROUNDED)
+        seq_table.add_column("File", style="cyan")
+        seq_table.add_column("Format", style="green")
+        seq_table.add_column("Reads", justify="right")
+        seq_table.add_column("Mean Len", justify="right")
+        seq_table.add_column("GC%", justify="right")
+        seq_table.add_column("Quality", style="magenta")
+        seq_table.add_column("Status", style="bold")
+
+        for sn in result.sniff_results:
+            status_tag = (
+                "[bold green]PASSED[/bold green]"
+                if sn.is_valid and not sn.human_markers_detected
+                else "[bold red]FAILED[/bold red]"
+                if not sn.is_valid
+                else "[bold yellow]SUSPICIOUS[/bold yellow]"
+            )
+            display_name = Path(sn.file_path).name
+            seq_table.add_row(
+                display_name,
+                f"{sn.format} ({sn.compression})",
+                str(sn.reads_sampled),
+                f"{sn.mean_read_length:.1f} bp" if sn.reads_sampled > 0 else "-",
+                f"{sn.gc_percent:.1f}%" if sn.reads_sampled > 0 else "-",
+                sn.phred_encoding,
+                status_tag,
+            )
+        console.print(seq_table)
+
+    console.print(
+        f"\n[dim]Summary: {len(result.errors)} errors, {len(result.warnings)} warnings, "
+        f"{result.sample_count} samples validated, {result.library_count} libraries declared.[/dim]"
+    )
+
+    if has_errors or (strict and has_warnings):
+        console.print(
+            "[bold red][FAILED] Dataset validation failed. "
+            "Please fix the errors listed above.[/bold red]"
+        )
+        raise typer.Exit(code=1)
+    else:
+        console.print("[bold green][PASSED] Dataset is valid and ready for upload.[/bold green]")
 
 
 def main() -> None:

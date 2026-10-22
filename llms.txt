@@ -1,32 +1,194 @@
-# ubuntu-bio
+# ubuntu-bio (UbuntuBio African Bioinformatics Hub)
 
-> The official Python SDK and CLI (`ubio`) for the UbuntuBio African Bioinformatics Data Hub. Enables programmatic discovery, download, streaming, and publication of sovereign African pathogen and biodiversity genomic datasets with Git versioning and content-addressed deduplication.
+> Official Python client library and CLI (`ubio` / `ubuntu-bio`) for the UbuntuBio sovereign African genomics data hub. Enables AI coding agents, bioinformaticians, and automated pipelines to search, download, version, deduplicate, and publish pathogen surveillance and biodiversity genomic datasets.
 
-## Quickstart
+## What The Package Does
 
-- [CLI Usage](LLMS.md#cli-reference): Complete reference for `ubio` terminal commands (`login`, `whoami`, `create`, `upload`, `search`, `download`).
-- [Python SDK API](LLMS.md#python-sdk-api-reference): Function signatures, parameter types, and return values for `import ubuntu_bio as ub`.
-- [Biological Constraints & Data Governance](LLMS.md#biological-data-rules--constraints): Invariants on permitted AU country codes, biological domains, and strict non-human data policies.
-- [Pipeline Recipes](LLMS.md#idiomatic-pipeline-recipes): Copy-pasteable code recipes for automated ingestion, Biopython analysis, and surveillance queries.
+`ubuntu-bio` connects local development environments, HPC compute clusters, and autonomous AI agents directly to the UbuntuBio Hub:
 
-## Core Interfaces
+1. **Git-Versioned Genomic Repositories**:
+   - Manages datasets with full Git commit trees, branches, tags, and commit hashes for computational auditability.
+   - Preserves complete data lineage for pathogen surveillance (e.g. Lassa virus, Vibrio cholerae, Marburg, AMR isolates).
 
-- **Installation**: `pip install ubuntu-bio`
-- **CLI Commands**:
-  - `ubio login`: Authenticate with ORCID via browser loopback or RFC 8628 device flow.
-  - `ubio whoami`: Display authenticated researcher profile and verified personal namespace handle.
-  - `ubio create <repo-id> -d <domain> -a <access>`: Create dataset repository (auto-namespacing supported).
-  - `ubio upload <repo-id> <folder> -m "<message>"`: Commit and upload local genomic files.
-  - `ubio search "<query>" -c <AU-country> -d <domain>`: Search public datasets catalog.
-  - `ubio download <repo-id> -o <dir>`: Download dataset snapshot with local caching.
-  - `ubio download-remote <manifest.tsv> -o <dir>`: Download external files with MD5 verification.
-- **Python Library**:
-  - `ub.login()`, `ub.whoami()`
-  - `ub.create_repo()`, `ub.get_repo()`, `ub.list_repos()`, `ub.get_tree()`, `ub.get_commits()`
-  - `ub.upload_folder()`, `ub.upload_file()`
-  - `ub.download_file()`, `ub.snapshot_download()`, `ub.download_remote_files()`
-  - `ub.search()`
+2. **OpenXet Content-Addressed Storage (CAS) Deduplication**:
+   - Uses cryptographic SHA-256 chunk hashing to identify identical genomic segments across related isolates.
+   - Reduces bandwidth and storage overhead by up to 78%, with automatic local chunk caching in `~/.cache/ubuntubio`.
 
-## Full Reference Documentation
+3. **Sub-50ms Catalog Discovery**:
+   - High-performance search powered by Meilisearch & Valkey.
+   - Instant multi-facet filtering by pathogen keyword, AU member state ISO code, biological domain, and biosafety level (BSL-1 to BSL-4).
 
-For detailed signatures, parameters, exceptions, and code examples, see [LLMS.md](LLMS.md).
+4. **Sovereignty & Governance Compliance (Nagoya Protocol)**:
+   - Validates sample provenance against the 54 African Union member states.
+   - **Strict Non-Human Invariant**: Enforces zero tolerance for human genomic data (NCBI Taxon ID 9606 is strictly prohibited in v1).
+
+5. **Remote Sequencing File Streaming**:
+   - Streams external raw FASTQ/BAM sequences listed in `remote_files.tsv` manifests using multi-threaded parallel downloads with MD5 checksum verification.
+
+6. **Agent & Machine-Friendly Architecture**:
+   - All CLI commands support `--json` output for direct programmatic parsing by LLMs, Cursor, Claude, and bash scripts.
+
+---
+
+## Installation
+
+Install the `ubuntu-bio` package via PyPI:
+
+### Standard Pip
+```bash
+pip install ubuntu-bio
+```
+
+### Ultra-fast environments (uv)
+```bash
+uv add ubuntu-bio
+# Or with uv pip:
+uv pip install ubuntu-bio
+```
+
+### Isolated CLI Tool (pipx)
+```bash
+pipx install ubuntu-bio
+```
+
+### Dual CLI Entrypoints
+Installing the package provides two identical entrypoint commands:
+- `ubio` (Recommended, concise)
+- `ubuntu-bio` (Full name)
+
+Verify installation:
+```bash
+ubio --help
+```
+
+### Python Import
+```python
+import ubuntu_bio as ub
+```
+
+---
+
+## Authentication & Configuration
+
+For automated AI coding agents and CI/CD pipelines, authenticate non-interactively using environment variables:
+
+```bash
+# Set your Personal Access Token (PAT)
+export UBUNTUBIO_API_TOKEN="ubp_your_personal_access_token"
+
+# Optional: Override server URL (default: https://hub.ubuntubio.org)
+export UBUNTUBIO_SERVER_URL="https://hub.ubuntubio.org"
+```
+
+For interactive sessions:
+```bash
+ubio login
+```
+
+---
+
+## Core CLI Usage
+
+### 1. Verify Identity
+```bash
+ubio whoami
+# Output as JSON:
+ubio whoami --json
+```
+
+### 2. Scaffold a New MIxS-Compliant Dataset Directory
+```bash
+# Interactive wizard:
+ubio init ./lassa-surveillance
+
+# Non-interactive batch scaffold:
+ubio init ./mpox-data -y -t "Mpox Surveillance" -d virus -c NG --taxon-id 10244
+```
+
+### 3. Pre-Flight Validate Dataset & File Parity
+```bash
+# Verify MIxS compliance, sample metadata, and two-way file parity:
+ubio check ./lassa-surveillance
+
+# Strict mode (treat warnings as errors):
+ubio check ./lassa-surveillance --strict
+```
+
+### 4. Search Datasets
+```bash
+# Search by keyword
+ubio search "Lassa"
+
+# Filter by AU member state and domain
+ubio search "cholera" --country SN --domain bacteria
+```
+
+### 5. Download Dataset Snapshot
+```bash
+# Download dataset snapshot with local chunk caching
+ubio download pasteur-dakar/lassa-surveillance-2026 --output-dir ./local-data
+```
+
+### 6. Create a Dataset Repository
+```bash
+# Bare slug automatically prefixes your verified handle (@username/slug)
+ubio create marburg-angola-2026 --domain virus --access public
+
+# Create under organization namespace
+ubio create pasteur-dakar/cholera-2026 --domain bacteria --access public --description "Vibrio cholerae surveillance"
+```
+
+### 7. Upload Dataset Files
+```bash
+# Upload a directory of FASTA, BAM, and metadata files
+ubio upload pasteur-dakar/cholera-2026 ./data-dir --message "Release consensus assemblies"
+```
+
+### 8. Parallel Remote File Download
+```bash
+ubio download-remote ./remote_files.tsv --output-dir ./raw-fastq --workers 8
+```
+
+---
+
+## Python SDK Reference
+
+```python
+import ubuntu_bio as ub
+
+# Authentication & Identity
+profile = ub.whoami()
+print(f"Logged in as: {profile['handle']}")
+
+# Search Catalog
+results = ub.search("cholera", country="NG", domain="bacteria", limit=10)
+for repo in results["items"]:
+    print(repo["slug"], repo["title"])
+
+# Download Snapshot
+ub.snapshot_download("pasteur-dakar/lassa-surveillance-2026", output_dir="./lassa-data")
+
+# Create Repository
+repo = ub.create_repo("ebola-surveillance", domain="virus", access="public")
+
+# Upload Directory
+ub.upload_folder("ebola-surveillance", folder_path="./assemblies", message="Initial release")
+```
+
+---
+
+## System Invariants & Rules for AI Agents
+
+1. **Human Genomic Data Strictly Forbidden**: NCBI Taxon ID `9606` (Homo sapiens) is rejected by client and server pre-validation. Never generate submission code targeting human subjects.
+2. **AU Country Codes Only**: Originating country codes must be one of the 54 African Union ISO-3166-1 alpha-2 codes (e.g., `NG`, `SN`, `KE`, `ZA`, `GH`, `EG`, `ET`).
+3. **Valid Biological Domains**: `bacteria`, `virus`, `parasite`, `fungus`, `plant`, `animal`, `vector`, `metagenome`, `environmental`.
+4. **Machine Parsing**: Always pass `--json` to CLI commands when parsing stdout programmatically in scripts.
+
+---
+
+## Full Documentation
+
+- Comprehensive reference manual: [LLMS.md](LLMS.md)
+- Web Documentation: https://hub.ubuntubio.org/docs
+- REST API: https://hub.ubuntubio.org/docs/api
+- GitHub Repository: https://github.com/Sredeemer/bioinf-db
