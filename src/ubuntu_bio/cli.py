@@ -535,6 +535,41 @@ def upload(
         raise typer.Exit(code=1) from exc
 
 
+@app.command(name="push")
+def push(
+    repo_id: Annotated[
+        str,
+        typer.Argument(
+            help="Target repository slug ('owner/name' or bare 'name' for personal dataset)."
+        ),
+    ],
+    local_path: Annotated[Path, typer.Argument(help="Local file or directory path to upload.")],
+    path_in_repo: Annotated[
+        str | None,
+        typer.Option(
+            "--path-in-repo",
+            "-p",
+            help="Relative path inside repo. Defaults to the local file name.",
+        ),
+    ] = None,
+    branch: Annotated[
+        str, typer.Option("--branch", "-b", help="Target branch (default: main).")
+    ] = "main",
+    message: Annotated[
+        str | None,
+        typer.Option("--message", "-m", help="Git commit message describing this upload."),
+    ] = None,
+) -> None:
+    """Push (upload) a file or directory to an UbuntuBio repository. Alias for `ubio upload`."""
+    upload(
+        repo_id=repo_id,
+        local_path=local_path,
+        path_in_repo=path_in_repo,
+        branch=branch,
+        message=message,
+    )
+
+
 @app.command()
 def download(
     repo_id: Annotated[

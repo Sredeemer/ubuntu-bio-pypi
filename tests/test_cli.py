@@ -118,3 +118,15 @@ def test_cli_search() -> None:
         result = runner.invoke(app, ["search", "cholera"])
         assert result.exit_code == 0
         assert "pasteur/cholera-2024" in result.stdout
+
+
+def test_cli_push_alias(tmp_path) -> None:
+    """Test ubio push acts as an alias for upload."""
+    sample_file = tmp_path / "data.fasta"
+    sample_file.write_text(">seq1\nACGT")
+
+    with patch("ubuntu_bio.cli.upload_file", return_value={"status": "committed"}) as mock_upload:
+        result = runner.invoke(app, ["push", "pasteur/cholera-2024", str(sample_file)])
+        assert result.exit_code == 0
+        assert "Upload successful: committed" in result.stdout
+        mock_upload.assert_called_once()
