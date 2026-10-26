@@ -410,6 +410,10 @@ def create(
         str,
         typer.Option("--license", help="Data license (default: cc-by-4.0)."),
     ] = "cc-by-4.0",
+    exist_ok: Annotated[
+        bool,
+        typer.Option("--exist-ok", help="Do not fail if repository already exists on Hub."),
+    ] = False,
 ) -> None:
     """Create a new dataset repository on UbuntuBio Hub.
 
@@ -450,6 +454,7 @@ def create(
             access=access,
             description=description,
             license=license,
+            exist_ok=exist_ok,
         )
         console.print(f"[bold green]✓ Created repository:[/bold green] {repo.get('slug')}")
         console.print(

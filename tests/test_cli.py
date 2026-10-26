@@ -90,6 +90,31 @@ def test_cli_create_bare_slug_auto_prefix() -> None:
             access="public",
             description=None,
             license="cc-by-4.0",
+            exist_ok=False,
+        )
+
+
+def test_cli_create_repo_exist_ok() -> None:
+    """Test ubio create command with --exist-ok flag."""
+    fake_repo = {
+        "slug": "nicd/lassa-2024",
+        "access": "public",
+        "domain": "virus",
+    }
+
+    with patch("ubuntu_bio.cli.hub_create_repo", return_value=fake_repo) as mock_create:
+        result = runner.invoke(
+            app, ["create", "nicd/lassa-2024", "--domain", "virus", "--exist-ok"]
+        )
+        assert result.exit_code == 0
+        assert "Created repository: nicd/lassa-2024" in result.stdout
+        mock_create.assert_called_once_with(
+            repo_id="nicd/lassa-2024",
+            domain="virus",
+            access="public",
+            description=None,
+            license="cc-by-4.0",
+            exist_ok=True,
         )
 
 
